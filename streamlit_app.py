@@ -1,34 +1,70 @@
 import streamlit as st
+import requests
+from datetime import datetime
+from pathlib import Path
+import tempfile
 
-st.set_page_config(
-    page_title="🍱 우리학교 급식 호출 시스템",
-    page_icon="🍱",
-    layout="wide"
-)
+CALL_FILE = Path(tempfile.gettempdir()) / "call.txt"
+
+@st.cache_data(ttl=600)
+def fetch_menu(key: str, atpt: str, schul: str, date: str):
+    url = (
+        f"https://open.neis.go.kr/hub/mealServiceDietInfo?KEY={key}&Type=json"
+        f"&ATPT_OFCDC_SC_CODE={atpt}&SD_SCHUL_CODE={schul}&MLSV_YMD={date}"
+    )
+    res = requests.get(url, timeout=5)
+    res.raise_for_status()
+    return res.json()
 
 st.title("🍱 우리학교 급식 호출 시스템")
 
-st.markdown("""
-## 시스템 안내
+today = datetime.today().strftime("%Y%m%d")
 
-이 시스템은 학교 급식 시간에 각 반의 호출 상황을 관리하고, 급식 메뉴를 확인할 수 있도록 합니다.
+KEY = "55a38ff473224d2090f4dfc7a0300ed9"
+ATPT = "M10"
+SCHUL = "8000069"
 
-### 📱 기능
+st.subheader("🍱 오늘 급식")
 
-- **급식 조회**: 오늘의 학교 급식 메뉴와 현재 호출 반 확인
-- **👩‍🏫 관리자 기능**: 각 반을 호출하고 상태를 관리
+if KEY == "여기에_API키":
+    st.warning("API 키를 설정하세요. 급식 정보는 표시되지 않습니다.")
+else:
+    try:
+        data = fetch_menu(KEY, ATPT, SCHUL, today)
+        meal_info = data.get('mealServiceDietInfo')
 
-### 📖 사용 방법
+        if not meal_info or len(meal_info) < 2:
+            st.warning("오늘 급식 정보 없음")
+        else:
+            rows = meal_info[1].get('row')
+            if not rows:
+                st.warning("오늘 급식 정보 없음")
+            else:
+                menu = rows[0].get('DDISH_NM', '')
+                if not menu:
+                    st.warning("오늘 급식 정보 없음")
+                else:
+                    menu = menu.replace("<br/>", "\n")
+                    st.text(menu)
+    except Exception as e:
+        st.warning("오늘 급식 정보 없음")
+        st.info(f"상세 오류: {e}")
 
-좌측 사이드바 메뉴를 이용하여 원하는 페이지로 이동하세요.
+# call.txt 자동 생성
+try:
+    if not CALL_FILE.exists():
+        CALL_FILE.write_text("대기중", encoding="utf-8")
+except Exception as e:
+    st.error(f"call.txt 생성 오류: {e}")
+    st.stop()
 
-**급식 조회 페이지에서:**
-- 오늘의 학교 급식 메뉴를 확인할 수 있습니다.
-- 현재 호출 중인 반을 실시간으로 볼 수 있습니다.
+st.divider()
+st.subheader("🔔 현재 호출 반")
 
-**관리자 페이지에서:**
-- 각 반을 호출할 수 있습니다.
-- 호출 상태를 초기화할 수 있습니다.
-""")
+try:
+    current_call = CALL_FILE.read_text(encoding="utf-8")
+except Exception as e:
+    st.error(f"call.txt 읽기 오류: {e}")
+    current_call = "오류 발생"
 
-st.info("💡 좌측 사이드바의 메뉴를 선택하여 시작하세요!")
+st.success(current_call)
